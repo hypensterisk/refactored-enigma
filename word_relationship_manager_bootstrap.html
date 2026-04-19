@@ -1,0 +1,261 @@
+
+<link rel="stylesheet" href="https://unpkg.com/bootstrap@5.3.8/dist/css/bootstrap.min.css">
+<script src="https://unpkg.com/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+
+<h2 class="visually-hidden">Word Relationship Manager</h2>
+
+<nav class="navbar bg-dark">
+  <div class="container-fluid">
+    <form class="d-flex w-100 gap-2" role="search">
+      <input class="form-control" type="search" id="search-input" placeholder="Search" aria-label="Search" oninput="renderCards()" />
+      <button class="btn btn-outline-primary text-nowrap" type="button" data-bs-toggle="modal" data-bs-target="#addWordModal">New</button>
+    </form>
+  </div>
+</nav>
+
+<div class="container-fluid mt-2">
+  <div class="row row-cols-1 g-1" id="cards-grid"></div>
+</div>
+
+<div class="modal fade" id="addWordModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Add new word</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" class="form-control bg-dark text-white border-secondary" id="new-word-input" placeholder="Word (case-sensitive)" />
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="addWord()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="relModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="rel-modal-title">Manage relationships</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-2">
+          <input type="text" class="form-control bg-dark text-white border-secondary" id="rel-input" placeholder="Link to word..." oninput="showSuggestions()" onkeydown="if(event.key==='Enter')addRelFromInput()" />
+          <button class="btn btn-outline-info" type="button" onclick="addRelFromInput()">Link</button>
+        </div>
+        <div id="suggestion-list" class="list-group mb-3" style="display:none"></div>
+        <p class="text-secondary small mb-1">LINKED TO</p>
+        <div id="chip-list"></div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-outline-danger btn-sm me-auto" onclick="deleteEditingWord()">Delete word</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="backupModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Backup & Restore</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body d-grid gap-2">
+        <button class="btn btn-outline-light" onclick="exportData()">Export JSON</button>
+        <button class="btn btn-outline-warning" onclick="document.getElementById('import-file').click()">Import JSON</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)" />
+        <hr class="border-secondary">
+        <button class="btn btn-outline-danger" onclick="clearAll()">Clear all data</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="position-fixed bottom-0 start-50 translate-middle-x p-3" style="z-index:9999">
+  <div id="toast-el" class="toast text-bg-dark border-secondary align-items-center" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toast-body"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORE_KEY='wrd-rel-bs-v1';
+let words={};
+let editingWord=null;
+let addModal,relModal,backupModal,bsToast;
+
+function save(){localStorage.setItem(STORE_KEY,JSON.stringify(words))}
+function load(){try{const d=localStorage.getItem(STORE_KEY);if(d)words=JSON.parse(d)}catch(e){words={}}}
+
+function toast(msg){
+  document.getElementById('toast-body').textContent=msg;
+  bsToast.show();
+}
+
+function addWord(){
+  const inp=document.getElementById('new-word-input');
+  const w=inp.value.trim();
+  if(!w){toast('Enter a word first');return}
+  if(words[w]!==undefined){toast('"'+w+'" already exists');return}
+  words[w]=[];save();inp.value='';addModal.hide();renderCards();toast('Added "'+w+'"');
+}
+
+function deleteWord(w){
+  if(!confirm('Delete "'+w+'" and all its relationships?'))return;
+  delete words[w];
+  Object.keys(words).forEach(k=>{words[k]=words[k].filter(r=>r!==w)});
+  save();renderCards();toast('Deleted "'+w+'"');
+}
+
+function deleteEditingWord(){
+  if(!editingWord)return;
+  const w=editingWord;
+  relModal.hide();
+  setTimeout(()=>deleteWord(w),300);
+}
+
+function addRelation(a,b){
+  if(!words[a]||!words[b]||a===b)return;
+  if(!words[a].includes(b))words[a].push(b);
+  if(!words[b].includes(a))words[b].push(a);
+  save();
+}
+
+function removeRelation(a,b){
+  words[a]=(words[a]||[]).filter(r=>r!==b);
+  words[b]=(words[b]||[]).filter(r=>r!==a);
+  save();
+}
+
+function openRelModal(w){
+  editingWord=w;
+  document.getElementById('rel-modal-title').textContent='Relationships: '+w;
+  document.getElementById('rel-input').value='';
+  document.getElementById('suggestion-list').style.display='none';
+  renderChips();
+  relModal.show();
+}
+
+function renderChips(){
+  const rels=words[editingWord]||[];
+  const el=document.getElementById('chip-list');
+  if(rels.length===0){el.innerHTML='<span class="text-secondary fst-italic small">No relationships yet</span>';return}
+  el.innerHTML=rels.map(r=>`<span class="badge bg-info text-dark me-1 mb-1 d-inline-flex align-items-center gap-1" style="font-size:13px">${esc(r)}<button onclick="removeRel('${esc(r)}')" style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:inherit;font-size:14px">×</button></span>`).join('');
+}
+
+function removeRel(r){removeRelation(editingWord,r);renderChips();}
+
+function showSuggestions(){
+  const val=document.getElementById('rel-input').value.trim();
+  const sl=document.getElementById('suggestion-list');
+  if(!val){sl.style.display='none';return}
+  const existing=words[editingWord]||[];
+  const matches=Object.keys(words).filter(w=>w!==editingWord&&!existing.includes(w)&&w.includes(val));
+  if(matches.length===0){sl.style.display='none';return}
+  sl.innerHTML=matches.slice(0,6).map(m=>`<button type="button" class="list-group-item list-group-item-action list-group-item-dark" onclick="pickSuggestion('${esc(m)}')">${esc(m)}</button>`).join('');
+  sl.style.display='block';
+}
+
+function pickSuggestion(w){
+  document.getElementById('rel-input').value=w;
+  document.getElementById('suggestion-list').style.display='none';
+  addRelFromInput();
+}
+
+function addRelFromInput(){
+  const inp=document.getElementById('rel-input');
+  const val=inp.value.trim();
+  if(!val)return;
+  if(val===editingWord){toast("A word can't relate to itself");return}
+  if(!words[val]){
+    if(!confirm('"'+val+'" doesn\'t exist yet. Add it and link?'))return;
+    words[val]=[];
+  }
+  if((words[editingWord]||[]).includes(val)){toast('Already linked to "'+val+'"');inp.value='';return}
+  addRelation(editingWord,val);
+  inp.value='';document.getElementById('suggestion-list').style.display='none';
+  renderChips();renderCards();toast('Linked "'+editingWord+'" ↔ "'+val+'"');
+}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+function renderCards(){
+  const q=document.getElementById('search-input').value.trim().toLowerCase();
+  const grid=document.getElementById('cards-grid');
+  const keys=Object.keys(words).sort((a,b)=>a.localeCompare(b));
+  const filtered=q?keys.filter(k=>k.toLowerCase().includes(q)):keys;
+  if(filtered.length===0){
+    grid.innerHTML=`<div class="col"><p class="text-secondary text-center mt-4">${q?'No words matching "'+esc(q)+'"':'No words yet. Press New to add one.'}</p></div>`;
+    return;
+  }
+  grid.innerHTML=filtered.map(w=>{
+    const rels=words[w]||[];
+    const items=rels.length>0
+      ?rels.map(r=>`<li class="list-group-item list-group-item-info" style="cursor:pointer" onclick="openRelModal('${esc(r)}')">${esc(r)}</li>`).join('')
+      :`<li class="list-group-item list-group-item-dark text-secondary fst-italic">No relationships</li>`;
+    return`<div class="col">
+      <div class="card text-bg-dark">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>${esc(w)}</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="openRelModal('${esc(w)}')">Edit</button>
+        </div>
+        <ul class="list-group list-group-flush">${items}</ul>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(words,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='word-relations-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  toast('Exported!');
+}
+
+function importData(e){
+  const file=e.target.files[0];if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(typeof data!=='object'||Array.isArray(data))throw new Error;
+      if(!confirm('Import will replace all current data. Continue?'))return;
+      words=data;save();renderCards();toast('Imported!');backupModal.hide();
+    }catch{toast('Invalid JSON file');}
+    e.target.value='';
+  };r.readAsText(file);
+}
+
+function clearAll(){
+  if(!confirm('Delete all words and relationships?'))return;
+  words={};save();renderCards();toast('Cleared');backupModal.hide();
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  addModal=new bootstrap.Modal(document.getElementById('addWordModal'));
+  relModal=new bootstrap.Modal(document.getElementById('relModal'));
+  backupModal=new bootstrap.Modal(document.getElementById('backupModal'));
+  bsToast=new bootstrap.Toast(document.getElementById('toast-el'),{delay:2200});
+
+  document.getElementById('new-word-input').addEventListener('keydown',e=>{if(e.key==='Enter')addWord()});
+  document.getElementById('addWordModal').addEventListener('shown.bs.modal',()=>document.getElementById('new-word-input').focus());
+  document.getElementById('relModal').addEventListener('hidden.bs.modal',()=>{editingWord=null;renderCards()});
+
+  const navExtra=document.createElement('button');
+  navExtra.className='btn btn-outline-secondary text-nowrap ms-1';
+  navExtra.textContent='Backup';
+  navExtra.setAttribute('data-bs-toggle','modal');
+  navExtra.setAttribute('data-bs-target','#backupModal');
+  document.querySelector('.navbar form').appendChild(navExtra);
+
+  load();renderCards();
+});
+</script>
