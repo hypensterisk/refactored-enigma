@@ -1,0 +1,275 @@
+
+<h2 class="sr-only">Word Relationship Manager — add words and link them bidirectionally</h2>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.app{padding:1.25rem 0;max-width:860px;margin:0 auto}
+.toolbar{display:flex;gap:8px;margin-bottom:1.25rem;align-items:center;flex-wrap:wrap}
+.toolbar input{flex:1;min-width:140px}
+#search-input{flex:1;min-width:120px}
+.btn-add{background:var(--color-text-primary);color:var(--color-background-primary);border:none;border-radius:var(--border-radius-md);padding:0 16px;height:36px;font-size:14px;cursor:pointer;white-space:nowrap;font-family:var(--font-sans)}
+.btn-add:hover{opacity:.85}
+.btn-sm{background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:0 12px;height:32px;font-size:13px;cursor:pointer;color:var(--color-text-secondary);font-family:var(--font-sans)}
+.btn-sm:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.btn-danger{color:#a32d2d;border-color:#f09595}
+.btn-danger:hover{background:#fcebeb;color:#a32d2d}
+.divider{width:0.5px;height:24px;background:var(--color-border-tertiary);margin:0 4px}
+.stats-row{display:flex;gap:8px;margin-bottom:1.25rem}
+.stat-card{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 16px;flex:1;min-width:0}
+.stat-label{font-size:12px;color:var(--color-text-secondary);margin-bottom:2px}
+.stat-value{font-size:20px;font-weight:500;color:var(--color-text-primary)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;transition:border-color .15s}
+.card:hover{border-color:var(--color-border-secondary)}
+.card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px}
+.word-title{font-size:17px;font-weight:500;color:var(--color-text-primary);word-break:break-word}
+.card-actions{display:flex;gap:4px;flex-shrink:0}
+.icon-btn{width:28px;height:28px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);font-size:13px;font-family:var(--font-sans)}
+.icon-btn:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.icon-btn.delete:hover{background:#fcebeb;color:#a32d2d;border-color:#f09595}
+.rel-label{font-size:11px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.rel-tags{display:flex;flex-wrap:wrap;gap:4px}
+.tag{font-size:12px;padding:3px 8px;border-radius:20px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);cursor:pointer;transition:all .12s}
+.tag:hover{background:var(--color-background-primary);border-color:var(--color-border-primary);color:var(--color-text-primary)}
+.no-rel{font-size:13px;color:var(--color-text-tertiary);font-style:italic}
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--color-text-tertiary)}
+.empty-state .big{font-size:32px;margin-bottom:8px}
+.empty-state p{font-size:14px;line-height:1.6}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:1.5rem;width:min(400px,92vw);max-height:80vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:500;margin-bottom:1rem;color:var(--color-text-primary)}
+.modal-input-row{display:flex;gap:8px;margin-bottom:1rem}
+.modal-input-row input{flex:1}
+.chip-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:1rem;min-height:32px}
+.chip{display:flex;align-items:center;gap:4px;font-size:13px;padding:4px 10px;border-radius:20px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);color:var(--color-text-primary)}
+.chip button{background:none;border:none;cursor:pointer;color:var(--color-text-secondary);padding:0;width:14px;height:14px;line-height:1;font-size:14px;display:flex;align-items:center;justify-content:center}
+.chip button:hover{color:#a32d2d}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:.5rem}
+.word-suggestion{font-size:13px;padding:6px 10px;cursor:pointer;border-radius:var(--border-radius-md);color:var(--color-text-primary)}
+.word-suggestion:hover{background:var(--color-background-secondary)}
+.suggestion-list{border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden;margin-top:-8px;margin-bottom:10px;background:var(--color-background-primary)}
+.flash{animation:flashIn .3s ease}
+@keyframes flashIn{0%{opacity:0;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
+.toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--color-text-primary);color:var(--color-background-primary);padding:8px 20px;border-radius:20px;font-size:13px;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+
+<div class="app">
+  <div class="toolbar">
+    <input type="text" id="new-word" placeholder="New word (case-sensitive)" />
+    <button class="btn-add" onclick="addWord()">Add word</button>
+    <div class="divider"></div>
+    <input type="text" id="search-input" placeholder="Search words..." oninput="renderCards()" />
+    <div class="divider"></div>
+    <button class="btn-sm" onclick="exportData()">Export</button>
+    <button class="btn-sm" onclick="document.getElementById('import-file').click()">Import</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)" />
+    <button class="btn-sm btn-danger" onclick="clearAll()">Clear all</button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Words</div><div class="stat-value" id="stat-words">0</div></div>
+    <div class="stat-card"><div class="stat-label">Relationships</div><div class="stat-value" id="stat-rels">0</div></div>
+    <div class="stat-card"><div class="stat-label">Most connected</div><div class="stat-value" id="stat-top" style="font-size:14px;padding-top:4px">—</div></div>
+  </div>
+
+  <div class="grid" id="cards-grid"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div id="modal-bg" class="modal-bg" style="display:none" onclick="closeModalOnBg(event)">
+  <div class="modal" id="modal">
+    <h3 id="modal-title">Manage relationships</h3>
+    <div class="modal-input-row">
+      <input type="text" id="rel-input" placeholder="Type a word to link..." oninput="showSuggestions()" onkeydown="relKeydown(event)" />
+      <button class="btn-sm" onclick="addRelFromInput()">Link</button>
+    </div>
+    <div class="suggestion-list" id="suggestion-list" style="display:none"></div>
+    <div class="rel-label">Current relationships</div>
+    <div class="chip-list" id="chip-list"></div>
+    <div class="modal-footer">
+      <button class="btn-sm" onclick="closeModal()">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORE_KEY='wrd-rel-v1';
+let words={};
+let editingWord=null;
+
+function save(){localStorage.setItem(STORE_KEY,JSON.stringify(words))}
+function load(){try{const d=localStorage.getItem(STORE_KEY);if(d)words=JSON.parse(d)}catch(e){words={}}}
+
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+function addWord(){
+  const inp=document.getElementById('new-word');
+  const w=inp.value.trim();
+  if(!w){toast('Enter a word first');return}
+  if(words[w]!==undefined){toast(`"${w}" already exists`);return}
+  words[w]=[];save();inp.value='';renderAll();toast(`Added "${w}"`);
+}
+
+function deleteWord(w){
+  if(!confirm(`Delete "${w}" and all its relationships?`))return;
+  delete words[w];
+  Object.keys(words).forEach(k=>{words[k]=words[k].filter(r=>r!==w)});
+  save();renderAll();toast(`Deleted "${w}"`);
+}
+
+function addRelation(a,b){
+  if(!words[a]||!words[b]||a===b)return;
+  if(!words[a].includes(b))words[a].push(b);
+  if(!words[b].includes(a))words[b].push(a);
+  save();
+}
+
+function removeRelation(a,b){
+  words[a]=words[a].filter(r=>r!==b);
+  words[b]=words[b].filter(r=>r!==a);
+  save();
+}
+
+function openModal(w){
+  editingWord=w;
+  document.getElementById('modal-title').textContent=`Relationships for "${w}"`;
+  document.getElementById('rel-input').value='';
+  document.getElementById('suggestion-list').style.display='none';
+  renderChips();
+  document.getElementById('modal-bg').style.display='flex';
+  setTimeout(()=>document.getElementById('rel-input').focus(),50);
+}
+
+function closeModal(){
+  document.getElementById('modal-bg').style.display='none';
+  editingWord=null;renderAll();
+}
+
+function closeModalOnBg(e){if(e.target===document.getElementById('modal-bg'))closeModal()}
+
+function renderChips(){
+  const list=document.getElementById('chip-list');
+  const rels=words[editingWord]||[];
+  if(rels.length===0){list.innerHTML='<span style="font-size:13px;color:var(--color-text-tertiary);font-style:italic">No relationships yet</span>';return}
+  list.innerHTML=rels.map(r=>`<div class="chip">${esc(r)}<button onclick="removeRel('${esc(r)}')">×</button></div>`).join('');
+}
+
+function removeRel(r){removeRelation(editingWord,r);renderChips();}
+
+function showSuggestions(){
+  const val=document.getElementById('rel-input').value.trim();
+  const sl=document.getElementById('suggestion-list');
+  if(!val){sl.style.display='none';return}
+  const existing=words[editingWord]||[];
+  const matches=Object.keys(words).filter(w=>w!==editingWord&&!existing.includes(w)&&w.includes(val));
+  if(matches.length===0){sl.style.display='none';return}
+  sl.innerHTML=matches.slice(0,6).map(m=>`<div class="word-suggestion" onclick="pickSuggestion('${esc(m)}')">${esc(m)}</div>`).join('');
+  sl.style.display='block';
+}
+
+function pickSuggestion(w){
+  document.getElementById('rel-input').value=w;
+  document.getElementById('suggestion-list').style.display='none';
+  addRelFromInput();
+}
+
+function addRelFromInput(){
+  const inp=document.getElementById('rel-input');
+  const val=inp.value.trim();
+  if(!val){return}
+  if(val===editingWord){toast("A word can't relate to itself");return}
+  if(!words[val]){
+    if(!confirm(`"${val}" doesn't exist yet. Add it and create the relationship?`))return;
+    words[val]=[];
+  }
+  if((words[editingWord]||[]).includes(val)){toast(`Already linked to "${val}"`);inp.value='';return}
+  addRelation(editingWord,val);
+  inp.value='';document.getElementById('suggestion-list').style.display='none';
+  renderChips();toast(`Linked "${editingWord}" ↔ "${val}"`);
+}
+
+function relKeydown(e){if(e.key==='Enter')addRelFromInput()}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+function renderCards(){
+  const q=document.getElementById('search-input').value.trim().toLowerCase();
+  const grid=document.getElementById('cards-grid');
+  const keys=Object.keys(words).sort((a,b)=>a.localeCompare(b));
+  const filtered=q?keys.filter(k=>k.toLowerCase().includes(q)):keys;
+  if(filtered.length===0){
+    grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="big">∅</div><p>${q?`No words matching <strong>"${esc(q)}"</strong>`:'No words yet.<br>Add your first word above.'}</p></div>`;
+    return;
+  }
+  grid.innerHTML=filtered.map(w=>{
+    const rels=words[w]||[];
+    const tagsHtml=rels.length>0
+      ?rels.map(r=>`<span class="tag" title="Open ${esc(r)}" onclick="openModal('${esc(r)}')">${esc(r)}</span>`).join('')
+      :`<span class="no-rel">No relationships</span>`;
+    return`<div class="card flash">
+      <div class="card-header">
+        <span class="word-title">${esc(w)}</span>
+        <div class="card-actions">
+          <button class="icon-btn" title="Manage relationships" onclick="openModal('${esc(w)}')">↔</button>
+          <button class="icon-btn delete" title="Delete word" onclick="deleteWord('${esc(w)}')">✕</button>
+        </div>
+      </div>
+      <div class="rel-label">Linked to (${rels.length})</div>
+      <div class="rel-tags">${tagsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderStats(){
+  const wc=Object.keys(words).length;
+  let rc=0,top='—',topN=0;
+  Object.keys(words).forEach(w=>{
+    rc+=words[w].length;
+    if(words[w].length>topN){topN=words[w].length;top=w}
+  });
+  document.getElementById('stat-words').textContent=wc;
+  document.getElementById('stat-rels').textContent=rc/2|0;
+  document.getElementById('stat-top').textContent=wc?`${top} (${topN})`:'—';
+}
+
+function renderAll(){renderCards();renderStats()}
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(words,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`word-relations-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();toast('Exported!')
+}
+
+function importData(e){
+  const file=e.target.files[0];if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(typeof data!=='object'||Array.isArray(data))throw new Error;
+      if(!confirm('Import will replace all current data. Continue?'))return;
+      words=data;save();renderAll();toast('Imported successfully!');
+    }catch{toast('Invalid JSON file');}
+    e.target.value='';
+  };
+  r.readAsText(file);
+}
+
+function clearAll(){
+  if(!confirm('Delete all words and relationships?'))return;
+  words={};save();renderAll();toast('Cleared');
+}
+
+document.getElementById('new-word').addEventListener('keydown',e=>{if(e.key==='Enter')addWord()});
+
+load();renderAll();
+</script>
