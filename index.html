@@ -14,7 +14,7 @@
 
   <nav class="navbar bg-dark">
     <div class="container-fluid">
-      <form class="d-flex w-100 gap-2" role="search">
+      <form class="d-flex w-100 gap-2" role="search" onsubmit="event.preventDefault()">
         <input class="form-control" type="search" id="search-input" placeholder="Search" aria-label="Search" oninput="renderCards()" />
         <button class="btn btn-outline-primary text-nowrap" type="button" data-bs-toggle="modal" data-bs-target="#addWordModal">New</button>
       </form>
@@ -156,7 +156,7 @@
       const rels=words[editingWord]||[];
       const el=document.getElementById('chip-list');
       if(rels.length===0){el.innerHTML='<span class="text-secondary fst-italic small">No relationships yet</span>';return}
-      el.innerHTML=rels.map(r=>`<span class="badge bg-info text-dark me-1 mb-1 d-inline-flex align-items-center gap-1" style="font-size:13px">${esc(r)}<button onclick="removeRel('${esc(r)}')" style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:inherit;font-size:14px">×</button></span>`).join('');
+      el.innerHTML=rels.map(r=>`<span class="badge bg-info text-dark me-1 mb-1 d-inline-flex align-items-center gap-1" style="font-size:13px">${esc(r)}<button onclick="removeRel(this.getAttribute('data-rel'))" data-rel="${esc(r)}" style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:inherit;font-size:14px">×</button></span>`).join('');
     }
 
     function removeRel(r){removeRelation(editingWord,r);renderChips();}
@@ -166,9 +166,9 @@
       const sl=document.getElementById('suggestion-list');
       if(!val){sl.style.display='none';return}
       const existing=words[editingWord]||[];
-      const matches=Object.keys(words).filter(w=>w!==editingWord&&!existing.includes(w)&&w.includes(val));
+      const matches=Object.keys(words).filter(w=>w!==editingWord&&!existing.includes(w)&&w.toLowerCase().includes(val.toLowerCase()));
       if(matches.length===0){sl.style.display='none';return}
-      sl.innerHTML=matches.slice(0,6).map(m=>`<button type="button" class="list-group-item list-group-item-action list-group-item-dark" onclick="pickSuggestion('${esc(m)}')">${esc(m)}</button>`).join('');
+      sl.innerHTML=matches.slice(0,6).map(m=>`<button type="button" class="list-group-item list-group-item-action list-group-item-dark" onclick="pickSuggestion(this.getAttribute('data-word'))" data-word="${esc(m)}">${esc(m)}</button>`).join('');
       sl.style.display='block';
     }
 
@@ -207,13 +207,13 @@
       grid.innerHTML=filtered.map(w=>{
         const rels=words[w]||[];
         const items=rels.length>0
-          ?rels.map(r=>`<li class="list-group-item list-group-item-info" style="cursor:pointer" onclick="openRelModal('${esc(r)}')">${esc(r)}</li>`).join('')
+          ?rels.map(r=>`<li class="list-group-item list-group-item-info" style="cursor:pointer" onclick="openRelModal(this.getAttribute('data-word'))" data-word="${esc(r)}">${esc(r)}</li>`).join('')
           :`<li class="list-group-item list-group-item-dark text-secondary fst-italic">No relationships</li>`;
         return`<div class="col">
           <div class="card text-bg-dark">
             <div class="card-header d-flex justify-content-between align-items-center">
               <span>${esc(w)}</span>
-              <button class="btn btn-sm btn-outline-secondary" onclick="openRelModal('${esc(w)}')">Edit</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="openRelModal(this.getAttribute('data-word'))" data-word="${esc(w)}">Edit</button>
             </div>
             <ul class="list-group list-group-flush">${items}</ul>
           </div>
