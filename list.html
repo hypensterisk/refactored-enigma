@@ -9,12 +9,18 @@
 <body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex items-center justify-center p-4">
 
   <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
-    
+
     <!-- Header -->
     <h1 class="text-2xl font-bold text-center mb-6 text-indigo-600">Spy Word Manager</h1>
 
+    <!-- VIEW 0: Loading -->
+    <div id="view-loading" class="text-center py-10">
+      <div class="inline-block w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+      <p class="text-gray-400 text-sm mt-3">Loading your saved words…</p>
+    </div>
+
     <!-- VIEW 1: Tag Selection -->
-    <div id="view-tags" class="space-y-4">
+    <div id="view-tags" class="hidden space-y-4">
       <h2 class="text-lg font-semibold mb-4 text-center">Select Category</h2>
       <div class="grid grid-cols-2 gap-3">
         <button onclick="selectTag('Culture')" class="tag-btn bg-blue-100 text-blue-700 hover:bg-blue-200 py-3 rounded-lg font-medium transition">Culture</button>
@@ -23,8 +29,9 @@
         <button onclick="selectTag('Adult Only')" class="tag-btn bg-red-100 text-red-700 hover:bg-red-200 py-3 rounded-lg font-medium transition">Adult Only</button>
         <button onclick="selectTag('Others')" class="tag-btn col-span-2 bg-gray-200 text-gray-700 hover:bg-gray-300 py-3 rounded-lg font-medium transition">Others</button>
       </div>
-      <div class="mt-6 flex justify-between border-t pt-4">
-        <button onclick="toggleDatabaseView()" class="text-sm text-gray-500 hover:text-indigo-600 font-medium">View Saved Words</button>
+      <div class="mt-6 flex justify-between items-center border-t pt-4">
+        <button onclick="showDatabaseView()" class="text-sm text-gray-500 hover:text-indigo-600 font-medium">View Saved Words</button>
+        <span id="total-count-label" class="text-xs text-gray-400"></span>
       </div>
     </div>
 
@@ -36,12 +43,15 @@
       </div>
 
       <h2 id="step-title" class="text-lg font-semibold text-center mb-2">Word 1 (Civilian)</h2>
-      
+
       <div class="flex flex-col gap-3">
-        <!-- Readonly input prevents typing -->
-        <input type="text" id="word-input" readonly placeholder="Paste word here..." 
-          class="w-full text-center text-xl p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 focus:outline-none">
-        
+        <!-- No longer readonly: clipboard paste can fail or be blocked, so typing must always work -->
+        <input type="text" id="word-input" placeholder="Paste or type a word..."
+          class="w-full text-center text-xl p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:border-indigo-400"
+          onkeydown="if(event.key==='Enter'){confirmWord();}">
+
+        <p id="input-error" class="text-red-500 text-sm text-center h-5"></p>
+
         <div class="flex gap-2">
           <button onclick="pasteWord()" class="flex-1 bg-gray-800 text-white py-3 rounded-lg font-medium hover:bg-gray-700 transition">
             📋 Paste
@@ -57,11 +67,23 @@
 
     <!-- VIEW 3: Database & Backup View -->
     <div id="view-database" class="hidden space-y-4">
-      <div class="flex justify-between items-center mb-4">
+      <div class="flex justify-between items-center mb-2">
         <h2 class="text-lg font-semibold">Saved Pairs</h2>
-        <button onclick="toggleDatabaseView()" class="text-sm text-indigo-600 font-medium">Back</button>
+        <button onclick="showView('tags')" class="text-sm text-indigo-600 font-medium">Back</button>
       </div>
-      
+
+      <div class="flex items-center justify-between gap-2">
+        <select id="filter-tag" onchange="renderList()" aria-label="Filter by category" class="text-sm border rounded-lg px-2 py-1.5 bg-white flex-1">
+          <option value="All">All Categories</option>
+          <option value="Culture">Culture</option>
+          <option value="Meme">Meme</option>
+          <option value="Entertainment">Entertainment</option>
+          <option value="Adult Only">Adult Only</option>
+          <option value="Others">Others</option>
+        </select>
+        <span id="filtered-count-label" class="text-xs text-gray-400 whitespace-nowrap"></span>
+      </div>
+
       <div id="word-list" class="max-h-60 overflow-y-auto space-y-2 border rounded-lg p-2 bg-gray-50">
         <!-- List items injected by JS -->
       </div>
@@ -78,15 +100,22 @@
   </div>
 
   <script>
-    // State Management
+    // ---------- Constants ----------
+    const STORAGE_KEY = 'pairs';
+    const TAGS = ['Culture', 'Meme', 'Entertainment', 'Adult Only', 'Others'];
+    const hasStorage = typeof window.storage !== 'undefined' && window.storage !== null;
+
+    // ---------- State ----------
     let state = {
       tag: '',
       word1: '',
-      pairs: JSON.parse(localStorage.getItem('spyWordsData')) || []
+      pairs: []
     };
+    let storageWarningShown = false;
 
-    // DOM Elements
+    // ---------- DOM refs ----------
     const views = {
+      loading: document.getElementById('view-loading'),
       tags: document.getElementById('view-tags'),
       listing: document.getElementById('view-listing'),
       database: document.getElementById('view-database')
@@ -94,17 +123,42 @@
     const inputEl = document.getElementById('word-input');
     const stepTitle = document.getElementById('step-title');
     const tagLabel = document.getElementById('current-tag-label');
+    const inputError = document.getElementById('input-error');
+    const totalCountLabel = document.getElementById('total-count-label');
+    const filterTagEl = document.getElementById('filter-tag');
+    const filteredCountLabel = document.getElementById('filtered-count-label');
 
-    // Routing functions
+    // ---------- View routing ----------
     function showView(viewName) {
       Object.values(views).forEach(el => el.classList.add('hidden'));
       views[viewName].classList.remove('hidden');
     }
 
-    // Flow Logic
+    function showDatabaseView() {
+      renderList();
+      showView('database');
+    }
+
+    // ---------- Init ----------
+    async function init() {
+      if (hasStorage) {
+        try {
+          const result = await window.storage.get(STORAGE_KEY, false);
+          const parsed = result ? JSON.parse(result.value) : [];
+          state.pairs = Array.isArray(parsed) ? parsed : [];
+        } catch (err) {
+          // No saved data yet (or a storage hiccup) — start fresh instead of breaking.
+          state.pairs = [];
+        }
+      }
+      updateTotalCount();
+      showView('tags');
+    }
+
+    // ---------- Tag flow ----------
     function selectTag(tagName) {
       state.tag = tagName;
-      state.word1 = ''; // reset just in case
+      state.word1 = '';
       tagLabel.textContent = tagName;
       setupWord1();
       showView('listing');
@@ -112,55 +166,16 @@
 
     function setupWord1() {
       inputEl.value = '';
-      stepTitle.textContent = "Word 1 (Civilian)";
+      stepTitle.textContent = 'Word 1 (Civilian)';
+      clearError();
+      inputEl.focus();
     }
 
     function setupWord2() {
       inputEl.value = '';
-      stepTitle.textContent = "Word 2 (Opponent/Spy)";
-    }
-
-    async function pasteWord() {
-      try {
-        const text = await navigator.clipboard.readText();
-        if(text.trim() === '') {
-            alert('Clipboard is empty.');
-            return;
-        }
-        inputEl.value = text.trim();
-      } catch (err) {
-        alert('Could not read clipboard. Please ensure your browser allows clipboard access.');
-      }
-    }
-
-    function confirmWord() {
-      const currentWord = inputEl.value;
-      if (!currentWord) {
-        alert('Please paste a word first!');
-        return;
-      }
-
-      if (!state.word1) {
-        // Saving Word 1, move to Word 2
-        state.word1 = currentWord;
-        setupWord2();
-      } else {
-        // Saving Word 2, complete the pair
-        state.pairs.push({
-          id: Date.now(),
-          tag: state.tag,
-          word1: state.word1,
-          word2: currentWord
-        });
-        saveToLocal();
-        
-        // Brief visual feedback
-        stepTitle.textContent = "✅ Saved!";
-        setTimeout(() => {
-          state.word1 = ''; // Reset for the next pair
-          setupWord1(); // Stay in listing mode under the same tag
-        }, 800);
-      }
+      stepTitle.textContent = 'Word 2 (Opponent/Spy)';
+      clearError();
+      inputEl.focus();
     }
 
     function resetToTags() {
@@ -169,33 +184,121 @@
       showView('tags');
     }
 
-    // Database & Backup Features
-    function saveToLocal() {
-      localStorage.setItem('spyWordsData', JSON.stringify(state.pairs));
+    function showError(msg) {
+      inputError.textContent = msg;
     }
 
-    function toggleDatabaseView() {
-      if (views.database.classList.contains('hidden')) {
-        renderList();
-        showView('database');
-      } else {
-        showView('tags');
+    function clearError() {
+      inputError.textContent = '';
+    }
+
+    // ---------- Paste / confirm ----------
+    async function pasteWord() {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        showError("Clipboard isn't available here — just type the word instead.");
+        return;
       }
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text.trim() === '') {
+          showError('Clipboard is empty.');
+          return;
+        }
+        inputEl.value = text.trim();
+        clearError();
+      } catch (err) {
+        showError("Couldn't read clipboard — you can type the word instead.");
+      }
+    }
+
+    function confirmWord() {
+      const currentWord = inputEl.value.trim();
+      if (!currentWord) {
+        showError('Please paste or type a word first!');
+        return;
+      }
+
+      if (!state.word1) {
+        // Saving Word 1, move to Word 2
+        state.word1 = currentWord;
+        setupWord2();
+        return;
+      }
+
+      if (currentWord.toLowerCase() === state.word1.toLowerCase()) {
+        showError('Word 2 must be different from Word 1.');
+        return;
+      }
+
+      // Saving Word 2, complete the pair
+      state.pairs.push({
+        id: Date.now(),
+        tag: state.tag,
+        word1: state.word1,
+        word2: currentWord
+      });
+      state.word1 = ''; // reset immediately so a fast paste+confirm can't reuse stale Word 1
+      savePairs();
+      updateTotalCount();
+
+      // Brief visual feedback, then reset for the next pair under the same tag
+      stepTitle.textContent = '✅ Saved!';
+      inputEl.value = '';
+      clearError();
+      setTimeout(setupWord1, 800);
+    }
+
+    // ---------- Persistence ----------
+    async function savePairs() {
+      if (!hasStorage) {
+        warnStorageUnavailable();
+        return;
+      }
+      try {
+        const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state.pairs), false);
+        if (!result) throw new Error('Storage returned no result');
+      } catch (err) {
+        console.error('Save failed', err);
+        warnStorageUnavailable();
+      }
+    }
+
+    function warnStorageUnavailable() {
+      if (storageWarningShown) return;
+      storageWarningShown = true;
+      alert("Heads up: your word pairs aren't being saved for next time (storage isn't available in this environment). They'll still work for this session.");
+    }
+
+    // ---------- Database & Backup Features ----------
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    function updateTotalCount() {
+      totalCountLabel.textContent = state.pairs.length ? `${state.pairs.length} saved` : '';
     }
 
     function renderList() {
       const listEl = document.getElementById('word-list');
-      if (state.pairs.length === 0) {
+      const filter = filterTagEl.value;
+      const filtered = filter === 'All' ? state.pairs : state.pairs.filter(p => p.tag === filter);
+
+      filteredCountLabel.textContent = `${filtered.length} pair${filtered.length === 1 ? '' : 's'}`;
+
+      if (filtered.length === 0) {
         listEl.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No words saved yet.</p>';
         return;
       }
-      
-      // Reverse array to show newest first
-      listEl.innerHTML = [...state.pairs].reverse().map(pair => `
+
+      // Reverse array to show newest first. Values are escaped since they come from
+      // clipboard paste, typing, or an imported backup file — none of that is trusted HTML.
+      listEl.innerHTML = [...filtered].reverse().map(pair => `
         <div class="flex justify-between items-center bg-white p-2 rounded shadow-sm text-sm">
           <div>
-            <span class="text-xs font-bold text-indigo-500">[${pair.tag}]</span><br>
-            ${pair.word1} <span class="text-gray-400">vs</span> ${pair.word2}
+            <span class="text-xs font-bold text-indigo-500">[${escapeHtml(pair.tag)}]</span><br>
+            ${escapeHtml(pair.word1)} <span class="text-gray-400">vs</span> ${escapeHtml(pair.word2)}
           </div>
           <button onclick="deletePair(${pair.id})" class="text-red-500 hover:text-red-700 px-2">✕</button>
         </div>
@@ -203,41 +306,75 @@
     }
 
     function deletePair(id) {
+      if (!confirm('Delete this word pair?')) return;
       state.pairs = state.pairs.filter(p => p.id !== id);
-      saveToLocal();
+      savePairs();
+      updateTotalCount();
       renderList();
     }
 
+    // ---------- Backup / restore ----------
     function backupData() {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.pairs, null, 2));
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", "whos_the_spy_backup_" + new Date().toISOString().slice(0,10) + ".json");
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
+      // Blob + object URL instead of a data: URI — more reliable across browsers
+      // and inside sandboxed/embedded views.
+      const blob = new Blob([JSON.stringify(state.pairs, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'whos_the_spy_backup_' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     }
 
     function restoreData(event) {
       const file = event.target.files[0];
       if (!file) return;
-      
+
       const reader = new FileReader();
-      reader.onload = function(e) {
+      reader.onload = function (e) {
         try {
           const imported = JSON.parse(e.target.result);
-          if (Array.isArray(imported)) {
-            state.pairs = imported;
-            saveToLocal();
-            renderList();
-            alert('Backup restored successfully!');
+          if (!Array.isArray(imported)) {
+            alert('Invalid backup file: expected a list of word pairs.');
+            return;
           }
+
+          const cleaned = imported
+            .filter(p => p && typeof p.word1 === 'string' && typeof p.word2 === 'string' && p.word1.trim() && p.word2.trim())
+            .map((p, i) => ({
+              id: typeof p.id === 'number' ? p.id : Date.now() + i,
+              tag: TAGS.includes(p.tag) ? p.tag : 'Others',
+              word1: p.word1.trim(),
+              word2: p.word2.trim()
+            }));
+
+          if (cleaned.length === 0) {
+            alert('No valid word pairs found in that file.');
+            return;
+          }
+
+          if (!confirm(`This will replace your current ${state.pairs.length} saved pair(s) with ${cleaned.length} pair(s) from the backup. Continue?`)) {
+            return;
+          }
+
+          state.pairs = cleaned;
+          savePairs();
+          updateTotalCount();
+          renderList();
+          alert('Backup restored successfully!');
         } catch (err) {
           alert('Invalid backup file.');
+        } finally {
+          event.target.value = ''; // allow re-selecting the same file again later
         }
       };
       reader.readAsText(file);
     }
+
+    // ---------- Boot ----------
+    init();
   </script>
 </body>
 </html>
