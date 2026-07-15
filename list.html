@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Who's the Spy - Word Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex items-center justify-center p-4">
+
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
+    
+    <!-- Header -->
+    <h1 class="text-2xl font-bold text-center mb-6 text-indigo-600">Spy Word Manager</h1>
+
+    <!-- VIEW 1: Tag Selection -->
+    <div id="view-tags" class="space-y-4">
+      <h2 class="text-lg font-semibold mb-4 text-center">Select Category</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <button onclick="selectTag('Culture')" class="tag-btn bg-blue-100 text-blue-700 hover:bg-blue-200 py-3 rounded-lg font-medium transition">Culture</button>
+        <button onclick="selectTag('Meme')" class="tag-btn bg-purple-100 text-purple-700 hover:bg-purple-200 py-3 rounded-lg font-medium transition">Meme</button>
+        <button onclick="selectTag('Entertainment')" class="tag-btn bg-pink-100 text-pink-700 hover:bg-pink-200 py-3 rounded-lg font-medium transition">Entertainment</button>
+        <button onclick="selectTag('Adult Only')" class="tag-btn bg-red-100 text-red-700 hover:bg-red-200 py-3 rounded-lg font-medium transition">Adult Only</button>
+        <button onclick="selectTag('Others')" class="tag-btn col-span-2 bg-gray-200 text-gray-700 hover:bg-gray-300 py-3 rounded-lg font-medium transition">Others</button>
+      </div>
+      <div class="mt-6 flex justify-between border-t pt-4">
+        <button onclick="toggleDatabaseView()" class="text-sm text-gray-500 hover:text-indigo-600 font-medium">View Saved Words</button>
+      </div>
+    </div>
+
+    <!-- VIEW 2: Listing Mode (Paste & Confirm) -->
+    <div id="view-listing" class="hidden space-y-4">
+      <div class="flex items-center justify-between bg-gray-50 p-3 rounded-lg mb-4">
+        <span class="text-sm font-semibold text-gray-500">Current Tag:</span>
+        <span id="current-tag-label" class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-bold"></span>
+      </div>
+
+      <h2 id="step-title" class="text-lg font-semibold text-center mb-2">Word 1 (Civilian)</h2>
+      
+      <div class="flex flex-col gap-3">
+        <!-- Readonly input prevents typing -->
+        <input type="text" id="word-input" readonly placeholder="Paste word here..." 
+          class="w-full text-center text-xl p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 focus:outline-none">
+        
+        <div class="flex gap-2">
+          <button onclick="pasteWord()" class="flex-1 bg-gray-800 text-white py-3 rounded-lg font-medium hover:bg-gray-700 transition">
+            📋 Paste
+          </button>
+          <button onclick="confirmWord()" class="flex-1 bg-green-500 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition">
+            ✅ Confirm
+          </button>
+        </div>
+      </div>
+
+      <button onclick="resetToTags()" class="w-full mt-4 text-sm text-gray-400 hover:text-gray-600">Cancel & Change Tag</button>
+    </div>
+
+    <!-- VIEW 3: Database & Backup View -->
+    <div id="view-database" class="hidden space-y-4">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold">Saved Pairs</h2>
+        <button onclick="toggleDatabaseView()" class="text-sm text-indigo-600 font-medium">Back</button>
+      </div>
+      
+      <div id="word-list" class="max-h-60 overflow-y-auto space-y-2 border rounded-lg p-2 bg-gray-50">
+        <!-- List items injected by JS -->
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mt-4">
+        <button onclick="backupData()" class="bg-blue-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-600">Export Backup</button>
+        <label class="bg-green-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-600 text-center cursor-pointer">
+          Restore Backup
+          <input type="file" class="hidden" accept=".json" onchange="restoreData(event)">
+        </label>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // State Management
+    let state = {
+      tag: '',
+      word1: '',
+      pairs: JSON.parse(localStorage.getItem('spyWordsData')) || []
+    };
+
+    // DOM Elements
+    const views = {
+      tags: document.getElementById('view-tags'),
+      listing: document.getElementById('view-listing'),
+      database: document.getElementById('view-database')
+    };
+    const inputEl = document.getElementById('word-input');
+    const stepTitle = document.getElementById('step-title');
+    const tagLabel = document.getElementById('current-tag-label');
+
+    // Routing functions
+    function showView(viewName) {
+      Object.values(views).forEach(el => el.classList.add('hidden'));
+      views[viewName].classList.remove('hidden');
+    }
+
+    // Flow Logic
+    function selectTag(tagName) {
+      state.tag = tagName;
+      state.word1 = ''; // reset just in case
+      tagLabel.textContent = tagName;
+      setupWord1();
+      showView('listing');
+    }
+
+    function setupWord1() {
+      inputEl.value = '';
+      stepTitle.textContent = "Word 1 (Civilian)";
+    }
+
+    function setupWord2() {
+      inputEl.value = '';
+      stepTitle.textContent = "Word 2 (Opponent/Spy)";
+    }
+
+    async function pasteWord() {
+      try {
+        const text = await navigator.clipboard.readText();
+        if(text.trim() === '') {
+            alert('Clipboard is empty.');
+            return;
+        }
+        inputEl.value = text.trim();
+      } catch (err) {
+        alert('Could not read clipboard. Please ensure your browser allows clipboard access.');
+      }
+    }
+
+    function confirmWord() {
+      const currentWord = inputEl.value;
+      if (!currentWord) {
+        alert('Please paste a word first!');
+        return;
+      }
+
+      if (!state.word1) {
+        // Saving Word 1, move to Word 2
+        state.word1 = currentWord;
+        setupWord2();
+      } else {
+        // Saving Word 2, complete the pair
+        state.pairs.push({
+          id: Date.now(),
+          tag: state.tag,
+          word1: state.word1,
+          word2: currentWord
+        });
+        saveToLocal();
+        
+        // Brief visual feedback
+        stepTitle.textContent = "✅ Saved!";
+        setTimeout(() => {
+          state.word1 = ''; // Reset for the next pair
+          setupWord1(); // Stay in listing mode under the same tag
+        }, 800);
+      }
+    }
+
+    function resetToTags() {
+      state.tag = '';
+      state.word1 = '';
+      showView('tags');
+    }
+
+    // Database & Backup Features
+    function saveToLocal() {
+      localStorage.setItem('spyWordsData', JSON.stringify(state.pairs));
+    }
+
+    function toggleDatabaseView() {
+      if (views.database.classList.contains('hidden')) {
+        renderList();
+        showView('database');
+      } else {
+        showView('tags');
+      }
+    }
+
+    function renderList() {
+      const listEl = document.getElementById('word-list');
+      if (state.pairs.length === 0) {
+        listEl.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No words saved yet.</p>';
+        return;
+      }
+      
+      // Reverse array to show newest first
+      listEl.innerHTML = [...state.pairs].reverse().map(pair => `
+        <div class="flex justify-between items-center bg-white p-2 rounded shadow-sm text-sm">
+          <div>
+            <span class="text-xs font-bold text-indigo-500">[${pair.tag}]</span><br>
+            ${pair.word1} <span class="text-gray-400">vs</span> ${pair.word2}
+          </div>
+          <button onclick="deletePair(${pair.id})" class="text-red-500 hover:text-red-700 px-2">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function deletePair(id) {
+      state.pairs = state.pairs.filter(p => p.id !== id);
+      saveToLocal();
+      renderList();
+    }
+
+    function backupData() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.pairs, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", "whos_the_spy_backup_" + new Date().toISOString().slice(0,10) + ".json");
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    }
+
+    function restoreData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (Array.isArray(imported)) {
+            state.pairs = imported;
+            saveToLocal();
+            renderList();
+            alert('Backup restored successfully!');
+          }
+        } catch (err) {
+          alert('Invalid backup file.');
+        }
+      };
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
